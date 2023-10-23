@@ -21,12 +21,14 @@ all_xml_files = read_xml_sourcefile(file_names)
 
 us = input('GitHub account name: ')
 repo = input('GitHub project name: ')
-start_from_issue = input('Start from (0 = beginning): ')
+default_labels = list(filter(None,
+        [l.strip()
+            for l in input('Default labels to apply (comma-separated): ').split(',')]))
 
 Options = namedtuple("Options", "account repo")
 opts = Options(account=us, repo=repo)
 
-project = Project()
+project = Project(default_labels)
 
 for f in all_xml_files:
     for item in f.channel.item:
@@ -34,7 +36,7 @@ for f in all_xml_files:
 
 project.prettify()
 
-input('Press any key to begin...')
+start_from_issue = input('Start from [0 = beginning]: ') or 0
 
 '''
 Steps:

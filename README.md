@@ -51,6 +51,7 @@ There are few similar projects, but these were the least outdated, and the fact 
 1. on startup it will ask for
    1. the GitHub account name (user or organization)
    1. the target GitHub repository name
+   1. any default labels to apply to all imported issues (optional)
    1. the index at which to start from, enter 0 to begin, if you have a failure, enter the index number the import failed at. Entering a number higher than 0 will stop labels from re-importing and milestones will re-match to existing.
 1. the import process will then
    1. read the JIRA XML export file and create an in-memory project representation of the xml file contents
