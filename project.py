@@ -3,12 +3,10 @@ from html.entities import name2codepoint
 from dateutil.parser import parse
 import re
 
-
 class Project:
 
-    def __init__(self, name, doneStatusCategoryId):
-        self.name = name
-        self.doneStatusCategoryId = doneStatusCategoryId
+    def __init__(self):
+        self.name = ''
         self._project = {'Milestones': defaultdict(int), 'Components': defaultdict(
             int), 'Labels': defaultdict(int), 'Types': defaultdict(int), 'Issues': []}
 
@@ -31,11 +29,7 @@ class Project:
         return merge
 
     def add_item(self, item):
-        itemProject = self._projectFor(item)
-        if itemProject != self.name:
-            print('Skipping item ' + item.key.text + ' for project ' +
-                  itemProject + ' current project: ' + self.name)
-            return
+        self.name = self._projectFor(item)
 
         self._append_item_to_project(item)
 
@@ -73,21 +67,12 @@ class Project:
 
     def _append_item_to_project(self, item):
         # todo assignee
-        closed = str(item.statusCategory.get('id')) == self.doneStatusCategoryId
-        closed_at = ''
-        if closed:
-            try:
-                closed_at = self._convert_to_iso(item.resolved.text)
-            except AttributeError:
-                pass
 
         self._project['Issues'].append({'title': item.title.text[item.title.text.index("]") + 2:len(item.title.text)],
                                         'key': item.key.text,
                                         'body': self._htmlentitydecode(item.description.text) + '\n<i>' + item.title.text[0:item.title.text.index("]") + 1] + ' created by ' + item.reporter.get('username') + '</i>',
                                         'created_at': self._convert_to_iso(item.created.text),
-                                        'closed_at': closed_at,
                                         'updated_at': self._convert_to_iso(item.updated.text),
-                                        'closed': closed,
                                         'labels': [],
                                         'comments': [],
                                         'duplicates': [],
@@ -96,8 +81,11 @@ class Project:
                                         'depends-on': [],
                                         'blocks': []
                                         })
-        if not self._project['Issues'][-1]['closed_at']:
-            del self._project['Issues'][-1]['closed_at']
+        try:
+            self._project['Issues'][-1]['closed_at'] = self._convert_to_iso(item.resolved.text)
+            self._project['Issues'][-1]['closed'] = True
+        except AttributeError:
+            self._project['Issues'][-1]['closed'] = False
 
     def _convert_to_iso(self, timestamp):
         dt = parse(timestamp)

@@ -19,8 +19,6 @@ def read_xml_sourcefile(file_names):
 file_names = sys.argv[1::]
 all_xml_files = read_xml_sourcefile(file_names)
 
-jira_proj = input('JIRA project name to use: ')
-jira_done_id = input('JIRA Done statusCategory ID: ')
 us = input('GitHub account name: ')
 repo = input('GitHub project name: ')
 start_from_issue = input('Start from (0 = beginning): ')
@@ -28,7 +26,7 @@ start_from_issue = input('Start from (0 = beginning): ')
 Options = namedtuple("Options", "account repo")
 opts = Options(account=us, repo=repo)
 
-project = Project(jira_proj, jira_done_id)
+project = Project()
 
 for f in all_xml_files:
     for item in f.channel.item:
