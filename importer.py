@@ -254,34 +254,31 @@ class Importer:
             # print("handling comment " + comment['url'])
             body = comment['body']
             if Importer._PLACEHOLDER_PREFIX in body:
-                newbody = self._replace_github_id_placholder(body)
-                self._patch_comment(comment['url'], newbody)
-        try:
-            next_comments = response.links["next"]
-            if next_comments:
-                next_url = next_comments['url']
-                self._post_process_comments(next_url)
-        except KeyError:
-            print('no more pages for comments: ')
-            for key, value in response.links.items():
-                print(key)
-                print(value)
+                midbody = self._replace_github_id_placholder(body)
+                newbody = self._replace_user_ids(midbody)
+                self._patch_comment(url, comment['id'], newbody)
 
     def _replace_github_id_placholder(self, text):
         result = text
         pattern = Importer._PLACEHOLDER_PREFIX + Importer._GITHUB_ISSUE_PREFIX + \
-            r'(\d+)' + Importer._PLACEHOLDER_SUFFIX
+                  r'(\d+)' + Importer._PLACEHOLDER_SUFFIX
         result = re.sub(pattern, Importer._GITHUB_ISSUE_PREFIX + r'\1', result)
         pattern = Importer._PLACEHOLDER_PREFIX + \
-            r'(\d+)' + Importer._PLACEHOLDER_SUFFIX
+                  r'(\d+)' + Importer._PLACEHOLDER_SUFFIX
         result = re.sub(pattern, r'\1', result)
         return result
 
-    def _patch_comment(self, url, body):
+    def _replace_user_ids(self, text):
+        result = text
+        for userid in self.project.users:
+            result = result.replace(userid, self.project.users[userid])
+        return result
+
+    def _patch_comment(self, url, comment_id, body):
         """
         Patches a single comment body of a Github issue.
         """
-        print("patching comment " + url)
+        print("patching comment " + repr(comment_id))
         # print("new body:" + body)
         patch_data = {'body': body}
         # print(patch_data)
