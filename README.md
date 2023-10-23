@@ -47,9 +47,8 @@ There are few similar projects, but these were the least outdated, and the fact 
 1. run `pip3 install -r requirements.txt`
 1. export the desired JIRA issues of your project (see section below)
 1. edit the `labelcolourselector.py` if you want to change the logic of how the colours are set on labels
-1. to start the Github import, execute 'python main.py'
+1. to start the GitHub import, execute `python3 main.py <path-to-jira-exports.xml>`
 1. on startup it will ask for
-   1. the JIRA XML export file name (use a semi-colon to enter multiple XML paths)
    1. the JIRA project name
    1. the `<statusCategoryId>` element's `id` attribute that signifies an issue as Done 
    1. the GitHub account name (user or organization)

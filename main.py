@@ -1,5 +1,6 @@
 import getpass
 from collections import namedtuple
+import sys
 from lxml import objectify
 from project import Project
 from importer import Importer
@@ -8,15 +9,14 @@ from labelcolourselector import LabelColourSelector
 
 def read_xml_sourcefile(file_names):
     files = list()
-    for file_name in file_names.split(';'):
+    for file_name in file_names:
         all_text = open(file_name).read()
         files.append(objectify.fromstring(all_text))
 
     return files
 
 
-file_names = input(
-    'Path to JIRA XML query file (semi-colon separate for multiple files): ')
+file_names = sys.argv[1::]
 all_xml_files = read_xml_sourcefile(file_names)
 
 jira_proj = input('JIRA project name to use: ')
