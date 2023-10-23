@@ -23,12 +23,10 @@ jira_proj = input('JIRA project name to use: ')
 jira_done_id = input('JIRA Done statusCategory ID: ')
 us = input('GitHub account name: ')
 repo = input('GitHub project name: ')
-user = input('GitHub username: ')
-pw = input('GitHub password: ')
 start_from_issue = input('Start from (0 = beginning): ')
 
-Options = namedtuple("Options", "user passwd account repo")
-opts = Options(user=user, passwd=pw, account=us, repo=repo)
+Options = namedtuple("Options", "account repo")
+opts = Options(account=us, repo=repo)
 
 project = Project(jira_proj, jira_done_id)
 

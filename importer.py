@@ -1,7 +1,7 @@
-import requests
-import random
-import time
+import json
 import re
+import subprocess
+import time
 
 
 class Importer:
@@ -13,51 +13,54 @@ class Importer:
     def __init__(self, options, project):
         self.options = options
         self.project = project
-        self.github_url = 'https://api.github.com/repos/%s/%s' % (
-            self.options.account, self.options.repo)
+        self.github_url = '/repos/%s/%s' % (self.options.account, self.options.repo)
         self.jira_issue_replace_patterns = {
             'https://java.net/jira/browse/%s%s' % (self.project.name, r'-(\d+)'): r'\1',
             self.project.name + r'-(\d+)': Importer._GITHUB_ISSUE_PREFIX + r'\1',
             r'Issue (\d+)': Importer._GITHUB_ISSUE_PREFIX + r'\1'}
 
+    def run_api(self, url, method='GET', payload=None, params={}):
+        command = ['gh', 'api', '-X', method, self.github_url + url, ]
+        for pk in params:
+            command.append('-f')
+            command.append(pk + '=' + params[pk])
+        if payload:
+            command.append('--input')
+            command.append('-')
+        # print('Running API command:', repr(command))
+        if payload:
+            bytes_in = json.dumps(payload).encode()
+            # print('Using input:', bytes_in)
+        else:
+            bytes_in = None
+        result = subprocess.run(command, capture_output=True, input=bytes_in)
+        # print('Receive API result:', repr(result))
+        if result.returncode:
+            raise RuntimeError('Failure return code ' +
+                               repr(result.returncode) +
+                               ' from command:\n' + repr(result.stdout) +
+                               '\n' + repr(result.stderr))
+        j = json.loads(result.stdout)
+        # print('Returning parsed output:', repr(j))
+        return j
+
     def import_milestones(self):
         """
         Imports the gathered project milestones into GitHub and remembers the created milestone ids
         """
-        milestone_url = self.github_url + '/milestones'
+        milestone_url = '/milestones'
         print('Importing milestones...', milestone_url)
         print
 
         # Check existing first
         existing = list()
 
-        def get_milestone_list(url):
-            return requests.get(url, auth=(self.options.user,
-                                           self.options.passwd),
-                                timeout=Importer._DEFAULT_TIME_OUT)
-
         def get_next_page_url(url):
             return url.replace('<', '').replace('>', '').replace('; rel="next"', '')
 
         milestone_pages = list()
-        ms = get_milestone_list(milestone_url + '?state=all')
-        milestone_pages.append(ms.json())
-
-        links = ms.headers['Link'].split(',')
-        nextPageUrl = get_next_page_url(links[0])
-
-        while nextPageUrl != None:
-            time.sleep(1)
-            nextPageUrl = None
-
-            for l in links:
-                if 'rel="next"' in l:
-                    nextPageUrl = get_next_page_url(l)
-
-            if nextPageUrl != None:
-                ms = get_milestone_list(nextPageUrl)
-                links = ms.headers['Link'].split(',')
-                milestone_pages.append(ms.json())
+        ms = self.run_api(milestone_url, params={'state': 'all'})
+        milestone_pages.append(ms)
 
         for ms_json in milestone_pages:
             for m in ms_json:
@@ -66,7 +69,7 @@ class Importer:
                     print(m['title'], 'found')
                     existing.append(m['title'])
                 else:
-                    print(m['title'], 'not found')
+                    print(m['title'], 'not used')
 
         # Export new ones
         for mkey in self.project.get_milestones().keys():
@@ -74,33 +77,30 @@ class Importer:
                 continue
 
             data = {'title': mkey}
-            r = requests.post(milestone_url, json=data, auth=(
-                self.options.user, self.options.passwd), timeout=Importer._DEFAULT_TIME_OUT)
+            content = self.run_api(milestone_url, method='POST', payload=data)
 
             # overwrite histogram data with the actual milestone id now
-            if r.status_code == 201:
-                content = r.json()
-                self.project.get_milestones()[mkey] = content['number']
-                print(mkey)
+            self.project.get_milestones()[mkey] = content['number']
+            print(mkey)
 
     def import_labels(self, colourSelector):
         """
         Imports the gathered project components and labels as labels into GitHub 
         """
-        label_url = self.github_url + '/labels'
+        label_url = '/labels'
         print('Importing labels...', label_url)
         print
 
         for lkey in self.project.get_all_labels().keys():
-            data = {'name': lkey,
-                    'color': colourSelector.get_colour(lkey)}
-            r = requests.post(label_url, json=data, auth=(
-                self.options.user, self.options.passwd), timeout=Importer._DEFAULT_TIME_OUT)
-            if r.status_code == 201:
-                print(lkey)
-            else:
-                print('Failure importing label ' + lkey,
-                      r.status_code, r.content, r.headers)
+            try:
+                self.run_api(label_url + '/' + lkey)
+                print('Skipping label that already exists:', lkey)
+            except RuntimeError as e:
+                # label doesn't exist
+                print('Importing label: ' + lkey)
+                data = {'name': lkey,
+                        'color': colourSelector.get_colour(lkey)}
+                self.run_api(label_url, method='POST', payload=data)
 
     def import_issues(self, start_from_count):
         """
@@ -152,65 +152,42 @@ class Importer:
         jiraKey = issue['key']
         del issue['key']
 
-        headers = {'Accept': 'application/vnd.github.golden-comet-preview+json'}
-        response = self.upload_github_issue(issue, comments, headers)
-        status_url = response.json()['url']
-        gh_issue_url = self.wait_for_issue_creation(
-            status_url, headers).json()['issue_url']
+        response = self.upload_github_issue(issue, comments)
+        gh_issue_url = self.wait_for_issue_creation(response['id'])['issue_url']
         gh_issue_id = int(gh_issue_url.split('/')[-1])
         issue['githubid'] = gh_issue_id
-        #print("\nGithub issue id: ", gh_issue_id)
+        # print("\nGithub issue id: ", gh_issue_id)
         issue['key'] = jiraKey
 
-    def upload_github_issue(self, issue, comments, headers):
+    def upload_github_issue(self, issue, comments):
         """
         Uploads a single issue to GitHub asynchronously with the Issue Import API.
         """
-        issue_url = self.github_url + '/import/issues'
+        issue_url = '/import/issues'
         issue_data = {'issue': issue, 'comments': comments}
-        response = requests.post(issue_url, json=issue_data, auth=(
-            self.options.user, self.options.passwd), headers=headers, timeout=Importer._DEFAULT_TIME_OUT)
-        if response.status_code == 202:
-            return response
-        elif response.status_code == 422:
-            raise RuntimeError(
-                "Initial import validation failed for issue '{}' due to the "
-                "following errors:\n{}".format(issue['title'], response.json())
-            )
-        else:
-            raise RuntimeError(
-                "Failed to POST issue: '{}' due to unexpected HTTP status code: {}\nerrors:\n{}"
-                .format(issue['title'], response.status_code, response.json())
-            )
+        return self.run_api(issue_url, method='POST', payload=issue_data)
 
-    def wait_for_issue_creation(self, status_url, headers):
+    def wait_for_issue_creation(self, import_id):
         """
         Check the status of a GitHub issue import.
         If the status is 'pending', it sleeps, then rechecks until the status is
         either 'imported' or 'failed'.
         """
         while True:  # keep checking until status is something other than 'pending'
-            time.sleep(3)
-            response = requests.get(status_url, auth=(
-                self.options.user, self.options.passwd), headers=headers, timeout=Importer._DEFAULT_TIME_OUT)
-            if response.status_code == 404:
-                continue
-            elif response.status_code != 200:
-                raise RuntimeError(
-                    "Failed to check GitHub issue import status url: {} due to unexpected HTTP status code: {}"
-                    .format(status_url, response.status_code)
-                )
+            response = self.run_api('/import/issues/' + str(import_id))
 
-            status = response.json()['status']
+            status = response['status']
             if status != 'pending':
                 break
+            else:
+                time.sleep(3)
 
         if status == 'imported':
-            print("Imported Issue:", response.json()['issue_url'])
+            print("Imported Issue:", response['issue_url'])
         elif status == 'failed':
             raise RuntimeError(
                 "Failed to import GitHub issue due to the following errors:\n{}"
-                .format(response.json())
+                .format(response)
             )
         else:
             raise RuntimeError(
@@ -263,7 +240,7 @@ class Importer:
         """
         Starts post-processing all issue comments.
         """
-        comment_url = self.github_url + '/issues/comments'
+        comment_url = '/issues/comments'
         self._post_process_comments(comment_url)
 
     def _post_process_comments(self, url):
@@ -271,15 +248,8 @@ class Importer:
         Paginates through all issue comments and replaces the issue id placeholders with the correct issue ids.
         """
         print("listing comments using " + url)
-        response = requests.get(url, auth=(
-            self.options.user, self.options.passwd), timeout=Importer._DEFAULT_TIME_OUT)
-        if response.status_code != 200:
-            raise RuntimeError(
-                "Failed to list all comments due to unexpected HTTP status code: {}".format(
-                    response.status_code)
-            )
+        comments = self.run_api(url)
 
-        comments = response.json()
         for comment in comments:
             # print("handling comment " + comment['url'])
             body = comment['body']
@@ -315,10 +285,4 @@ class Importer:
         # print("new body:" + body)
         patch_data = {'body': body}
         # print(patch_data)
-        response = requests.patch(url, json=patch_data, auth=(
-            self.options.user, self.options.passwd), timeout=Importer._DEFAULT_TIME_OUT)
-        if response.status_code != 200:
-            raise RuntimeError(
-                "Failed to patch comment {} due to unexpected HTTP status code: {} ; text: {}".format(
-                    url, response.status_code, response.text)
-            )
+        self.run_api(url + '/' + str(comment_id), method='PATCH', payload=patch_data)
