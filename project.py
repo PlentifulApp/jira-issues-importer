@@ -115,7 +115,7 @@ class Project:
 
     def _people_link(self, base_url, account_id, account_name=None):
         if account_id is None:
-            return ""
+            return "Unknown user"
 
         resolved_account_name = account_name
         if not resolved_account_name:
