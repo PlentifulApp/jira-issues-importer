@@ -114,6 +114,9 @@ class Project:
             self._project['Issues'][-1]['closed'] = False
 
     def _people_link(self, base_url, account_id, account_name=None):
+        if account_id is None:
+            return ""
+
         resolved_account_name = account_name
         if not resolved_account_name:
             if account_id in self.users:
